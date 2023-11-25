@@ -12,6 +12,9 @@ const responseOk = {
   body: ""
 }
 const docClient = new AWS.DynamoDB.DocumentClient()
+const apiGw = new AWS.ApiGatewayManagementApi({
+  endpoint: process.env["WSSAPIGATEWAYENDPOINT"]
+})
 
 export const handle = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
   const routeKey = event.requestContext.routeKey
@@ -22,7 +25,8 @@ export const handle = async (event: APIGatewayProxyEvent): Promise<APIGatewayPro
       return handleConnect(connectionId, event.queryStringParameters)
     case "$disconnect":
       return handleDisconnect(connectionId)
-    // case "getClients":
+    case "getClients":
+      return handleGetClients(connectionId)
     default:
       return {
         statusCode: 500,
@@ -68,6 +72,25 @@ const handleConnect = async (
           nickname: queryParams["nickname"],
         }
       }).promise()
+
+  return responseOk
+}
+
+const handleGetClients = async (
+  connectionId: string): Promise<APIGatewayProxyResult> => {
+  const output = await docClient
+    .scan({
+      TableName: CLIENT_TABLE_NAME
+    })
+    .promise()
+
+  const clients = output.Items || []
+
+  await apiGw.postToConnection({
+    ConnectionId: connectionId,
+    Data: JSON.stringify(clients)
+  })
+    .promise()
 
   return responseOk
 }
