@@ -6,7 +6,11 @@ import {
 import AWS from 'aws-sdk'
 
 type Action = "$connect" | '$disconnect' | 'getMessages' | 'sendMessage' | 'getClients'
-
+const CLIENT_TABLE_NAME = 'Clients'
+const responseOk = {
+  statusCode: 200,
+  body: ""
+}
 const docClient = new AWS.DynamoDB.DocumentClient()
 
 export const handle = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
@@ -15,8 +19,9 @@ export const handle = async (event: APIGatewayProxyEvent): Promise<APIGatewayPro
 
   switch (routeKey) {
     case "$connect":
-      return handleConnect(connectId, event.queryStringParameters)
-    // case "$disconnect":
+      return handleConnect(connectionId, event.queryStringParameters)
+    case "$disconnect":
+      return handleDisconnect(connectionId)
     // case "getClients":
     default:
       return {
@@ -25,6 +30,22 @@ export const handle = async (event: APIGatewayProxyEvent): Promise<APIGatewayPro
       }
   }
 
+}
+
+const handleDisconnect = async (
+  connectionId: string,
+): Promise<APIGatewayProxyResult> => {
+
+  await docClient
+    .delete(
+      {
+        TableName: CLIENT_TABLE_NAME
+        , Key: {
+          connectionId
+        }
+      }).promise()
+
+  return responseOk
 }
 
 const handleConnect = async (
@@ -41,15 +62,12 @@ const handleConnect = async (
   await docClient
     .put(
       {
-        TableName: "Clients",
+        TableName: CLIENT_TABLE_NAME,
         Item: {
           connectionId,
           nickname: queryParams["nickname"],
         }
       }).promise()
 
-  return {
-    statusCode: 200,
-    body: ""
-  }
+  return responseOk
 }
