@@ -3,7 +3,7 @@ import {
   APIGatewayProxyEventQueryStringParameters,
   APIGatewayProxyResult,
 } from "aws-lambda";
-import AWS from 'aws-sdk'
+import AWS, { AWSError } from 'aws-sdk'
 
 type Action = "$connect" | '$disconnect' | 'getMessages' | 'sendMessage' | 'getClients'
 const CLIENT_TABLE_NAME = 'Clients'
@@ -86,11 +86,26 @@ const handleGetClients = async (
 
   const clients = output.Items || []
 
-  await apiGw.postToConnection({
-    ConnectionId: connectionId,
-    Data: JSON.stringify(clients)
-  })
-    .promise()
+  try {
+    await apiGw.postToConnection({
+      ConnectionId: connectionId,
+      Data: JSON.stringify(clients)
+    })
+      .promise()
+  } catch (e) {
+    if ((e as AWSError).statusCode !== 410) {
+      throw e
+    }
+
+    await docClient
+      .delete(
+        {
+          TableName: CLIENT_TABLE_NAME
+          , Key: {
+            connectionId
+          }
+        }).promise()
+  }
 
   return responseOk
 }
