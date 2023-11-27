@@ -6,6 +6,10 @@ import {
 import AWS, { AWSError } from 'aws-sdk'
 
 type Action = "$connect" | '$disconnect' | 'getMessages' | 'sendMessage' | 'getClients'
+type Client = {
+  connectionId: string
+  nickname: string
+}
 const CLIENT_TABLE_NAME = 'Clients'
 const responseOk = {
   statusCode: 200,
@@ -36,22 +40,6 @@ export const handle = async (event: APIGatewayProxyEvent): Promise<APIGatewayPro
 
 }
 
-const handleDisconnect = async (
-  connectionId: string,
-): Promise<APIGatewayProxyResult> => {
-
-  await docClient
-    .delete(
-      {
-        TableName: CLIENT_TABLE_NAME
-        , Key: {
-          connectionId
-        }
-      }).promise()
-
-  return responseOk
-}
-
 const handleConnect = async (
   connectionId: string,
   queryParams: APIGatewayProxyEventQueryStringParameters | null
@@ -73,11 +61,39 @@ const handleConnect = async (
         }
       }).promise()
 
+  await notifyClients(connectionId)
+
   return responseOk
 }
 
-const handleGetClients = async (
-  connectionId: string): Promise<APIGatewayProxyResult> => {
+const handleDisconnect = async (
+  connectionId: string,
+): Promise<APIGatewayProxyResult> => {
+
+  await docClient
+    .delete(
+      {
+        TableName: CLIENT_TABLE_NAME
+        , Key: {
+          connectionId
+        }
+      }).promise()
+
+  await notifyClients(connectionId)
+
+  return responseOk
+}
+
+const notifyClients = async (connectionIdToExclude: string) => {
+  const clients = await getAllClients()
+
+  await Promise.all(clients.filter(client => client.connectionId !== connectionIdToExclude).map(
+    async (client) => {
+      await postToConnection(client.connectionId, JSON.stringify(clients))
+    }))
+}
+
+const getAllClients = async (): Promise<Client[]> => {
   const output = await docClient
     .scan({
       TableName: CLIENT_TABLE_NAME
@@ -85,11 +101,14 @@ const handleGetClients = async (
     .promise()
 
   const clients = output.Items || []
+  return clients as Client[]
+}
 
+const postToConnection = async (connectionId: string, data: string) => {
   try {
     await apiGw.postToConnection({
       ConnectionId: connectionId,
-      Data: JSON.stringify(clients)
+      Data: data
     })
       .promise()
   } catch (e) {
@@ -106,6 +125,12 @@ const handleGetClients = async (
           }
         }).promise()
   }
+}
+
+const handleGetClients = async (connectionId: string): Promise<APIGatewayProxyResult> => {
+  const clients = await getAllClients()
+
+  await postToConnection(connectionId, JSON.stringify(clients))
 
   return responseOk
 }
